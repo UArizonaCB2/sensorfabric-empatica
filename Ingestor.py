@@ -27,6 +27,10 @@ def ingestor(directory, s3_path, database, mode='append'):
 
             # Go into digital_biomarkers/aggregated_per_minute
             file_path = os.path.join(folder_path, 'digital_biomarkers/aggregated_per_minute/')
+            if not os.path.exists(file_path):
+                #TODO: Add this to the logs and move on.
+                print(f"Unable to find the path {file_path}")
+                continue
             
             for file in os.listdir(file_path):
                 # Read CSV file
