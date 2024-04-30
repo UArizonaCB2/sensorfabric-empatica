@@ -4,9 +4,8 @@ import boto3
 import pandas as pd
 from Ingestor import ingestor
 from pyarrow.parquet import ParquetDataset
-
-# AWS Credentials
-boto3.setup_default_session(profile_name='cb2')
+import argparse
+import time
 
 def controller(directory, s3_path, database):
 
@@ -16,30 +15,30 @@ def controller(directory, s3_path, database):
         if not os.path.isdir(folder_path):
             continue
 
-        # Retrieve date 
-        date = os.path.basename(date_folder)
-
         # If date has not been ingested
-        if date not in ingested_dates:
+        if date_folder not in ingested_dates:
             # Call Ingestor
-            parquet_status, athena_table_status = ingestor(directory = directory + date + '/',
-                                                            s3_path = 's3://cb2-yuanjea-development/dataset/empatica/',
-                                                            database = 'cb2-yuanjea-development',
-                                                            mode="append")
-            print(parquet_status) 
-            print(athena_table_status)
+            start = time.time()
+            parquet_status, athena_table_status = ingestor(folder_path, s3_path, database, "append")
+            end = time.time()
+            print(date_folder, end-start, parquet_status, athena_table_status)
             # Check if ingestion is successful, add the date to ingested_dates
             if (parquet_status == 'Successfully written parquet files') and athena_table_status == ('Succesfully created/updated Athena table'):
                 # Store date into a set
-                ingested_dates.add(date)
+                ingested_dates.add(date_folder)
                 # Check if it is a folder
-    print(ingested_dates)
 
 if __name__ == "__main__":
 
-    directory = 'empatica/empatica_raw_test/participant_data/'
-    s3_path = 's3://cb2-yuanjea-development/dataset/empatica/'
-    database = 'cb2-yuanjea-development'
+    cmdparser = argparse.ArgumentParser(description='Controller to ingest empatica files.')
+    cmdparser.add_argument('directory', type=str, help='Path to the participant_data/ directory')
+    cmdparser.add_argument('s3_path', type=str, help='Path to where the parquet files will be uploaded in S3')
+    cmdparser.add_argument('database', type=str, help='AWS Glue database name')
+    args = cmdparser.parse_args()
+
+    directory = args.directory
+    s3_path = args.s3_path
+    database = args.database
     ingested_dates = set()
 
     controller(directory, s3_path, database)

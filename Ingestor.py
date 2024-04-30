@@ -3,9 +3,6 @@ import awswrangler as wr
 import boto3
 import os
 
-# AWS Credentials
-boto3.setup_default_session(profile_name='cb2')
-
 def ingestor(directory, s3_path, database, mode='append'):
     """
     Function to correctly parse the directory structure, extract the data from the CSV files and then upload them to the correct AWS table.
@@ -50,9 +47,7 @@ def ingestor(directory, s3_path, database, mode='append'):
                 table_name = file.split('_')[-1].split('.')[0]
                 # Replace dash with underscore
                 table_name = table_name.replace('-', '_')
-                print(device_id)
-                print(table_name)
-                try: 
+                try:
                     # Save the DataFrame to S3 in parquet format
                     wr.s3.to_parquet(
                         df=df,
@@ -92,17 +87,3 @@ def ingestor(directory, s3_path, database, mode='append'):
                     athena_table_status = "Athena table not created/updated"
 
     return parquet_status, athena_table_status
-
-# if __name__ == "__main__":
-
-#     # Specify inputs
-#     directory = 'empatica/empatica_raw_test/participant_data/2024-01-21/'
-#     s3_path = 's3://cb2-yuanjea-development/dataset/empatica/'
-#     database = 'cb2-yuanjea-development'
-
-#     # Call function
-#     parquet_status, athena_table_status = ingestor(directory, s3_path, database, mode='append')
-
-#     # Check parquet and Athena table status
-#     print(parquet_status)
-#     print(athena_table_status)
