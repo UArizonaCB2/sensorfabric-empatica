@@ -3,6 +3,19 @@ import awswrangler as wr
 import boto3
 import os
 
+"""
+Pandas to Hadoop datatype mapper.
+---------------------------------
+The hadoop data type names are different from the pandas datatype names.
+This map does a "best-effort" job to provide a conversion for some of them.
+Add more to these as we see newer datatypes.
+"""
+dtype_mapper = {
+    'integer': 'bigint',
+    'floating': 'double',
+    'datetime64': 'timestamp',
+}
+
 def ingestor(directory, s3_path, database, mode='append'):
     """
     Function to correctly parse the directory structure, extract the data from the CSV files and then upload them to the correct AWS table.
@@ -17,6 +30,9 @@ def ingestor(directory, s3_path, database, mode='append'):
     parquet_success, parquet_status = False , ""
     # Initialize variable to track Athena table creation/update status
     athena_table_success, athena_table_status = False, ""
+
+    # The names of tables to ingest.
+    table_whitelist = createTableWhitelist()
 
     for folder in os.listdir(directory):
         folder_path = os.path.join(directory, folder)
@@ -51,11 +67,22 @@ def ingestor(directory, s3_path, database, mode='append'):
                 table_name = file.split('_')[-1].split('.')[0]
                 # Replace dash with underscore
                 table_name = table_name.replace('-', '_')
+
+                # Table whitelist check.
+                if not table_name in table_whitelist:
+                    continue
+
+                # Create a table path that has the modality / table-name attached to it.
+                table_path = f"{s3_path}/{table_name}/"
+                if s3_path[-1] == '/': # we don't add additional / if s3_path variable had one at the end.
+                    table_path = f"{s3_path}{table_name}/"
+
+                parquet_success = False
                 try:
                     # Save the DataFrame to S3 in parquet format
                     wr.s3.to_parquet(
                         df=df,
-                        path=s3_path,
+                        path=table_path,
                         dataset=True,
                         database=database,
                         table=table_name,
@@ -67,27 +94,20 @@ def ingestor(directory, s3_path, database, mode='append'):
                 except Exception as e:
                     parquet_status = f"Error in writing parquet files: {repr(e)}"
 
-                # Check if table already exists and parquet files were successfully written
-                if not wr.catalog.table(database, table_name).empty and parquet_success:
-                    try:
-                        # Dynmaically infer column types from csv_file
-                        columns_types = {col: pd.api.types.infer_dtype(df[col]) for col in df.columns}
-                        
-                        # Data from each .csv file in there will be added to its own Glue table
-                        # Create a parquet table in AWS Glue Catalog
-                        wr.catalog.create_parquet_table(
-                            database=database,
-                            table=table_name,
-                            path=s3_path,
-                            columns_types=columns_types,
-                            mode=mode
-                        )
-                        athena_table_success = True
-                        athena_table_status = "Succesfully created/updated Athena table"
-
-                    except Exception as e:
-                        athena_table_status = f"Error in creating/updating Athena table: {repr(e)}"
-                else:
-                    athena_table_status = "Athena table not created/updated"
-
     return parquet_status, athena_table_status
+
+def createTableWhitelist():
+    """
+    Looks for a local file called "whitelist.txt" that should contain the table names to ingest.
+    Parses it with table name per line, and returns a list with those names.
+    """
+    if not os.path.isfile('whitelist.txt'):
+        raise Exception('File whitelist.txt not found in local directory.')
+    f = open('whitelist.txt', 'r')
+    tables = []
+    for line in f.readlines():
+        if len(line) > 0:
+            line = line.strip()
+            tables.append(line)
+
+    return tables

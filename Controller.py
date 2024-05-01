@@ -41,4 +41,12 @@ if __name__ == "__main__":
     database = args.database
     ingested_dates = set()
 
+    """
+    The ingestor assumes that there is a local file named "whitelist.txt" that contains
+    the names of the tables / metrics that need to be ingested. One table name per line.
+    If this file is not there, we will just self-destruct here.
+    """
+    if not os.path.isfile('whitelist.txt'):
+        raise Exception('Cannot find whitelist.txt in the local directory.')
+
     controller(directory, s3_path, database)
