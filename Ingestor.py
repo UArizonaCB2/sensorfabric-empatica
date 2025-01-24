@@ -2,6 +2,7 @@ import pandas as pd
 import awswrangler as wr
 import boto3
 import os
+from utils import createTableWhitelist, uploadToAWS
 
 """
 Pandas to Hadoop datatype mapper.
@@ -60,7 +61,7 @@ def ingestor(directory, s3_path, database, mode='append'):
                 if (df['timestamp_iso'].dtype != 'datetime64'):
                     df['timestamp_iso'] = pd.to_datetime(df['timestamp_iso'])
 
-                # Convert the data type of the timestamp_unix column to bigint #############################
+                # Convert the data type of the timestamp_unix column to bigint
                 df['timestamp_unix'] = df['timestamp_unix'].astype('int64')
 
                 # Extract the table name from the filename
@@ -72,42 +73,19 @@ def ingestor(directory, s3_path, database, mode='append'):
                 if not table_name in table_whitelist:
                     continue
 
-                # Create a table path that has the modality / table-name attached to it.
-                table_path = f"{s3_path}/{table_name}/"
-                if s3_path[-1] == '/': # we don't add additional / if s3_path variable had one at the end.
-                    table_path = f"{s3_path}{table_name}/"
+                # Upload it all to AWS
+                status, err = uploadToAWS(df,
+                            s3_path,
+                            database,
+                            table_name,
+                            'participant_full_id')
 
-                parquet_success = False
-                try:
-                    # Save the DataFrame to S3 in parquet format
-                    wr.s3.to_parquet(
-                        df=df,
-                        path=table_path,
-                        dataset=True,
-                        database=database,
-                        table=table_name,
-                        partition_cols=['participant_full_id']
-                    )
-                    parquet_success = True
-                    parquet_status = "Successfully written parquet files"
-
-                except Exception as e:
-                    parquet_status = f"Error in writing parquet files: {repr(e)}"
+                if status:
+                    print('Success : Written file {} into table {}'
+                            .format(os.path.join(file_path, filename), table_name))
+                else:
+                    print('ERROR : Written file {} into table {}'
+                            .format(os.path.join(file_path, filename), table_name))
+                    print(err)
 
     return parquet_status, athena_table_status
-
-def createTableWhitelist():
-    """
-    Looks for a local file called "whitelist.txt" that should contain the table names to ingest.
-    Parses it with table name per line, and returns a list with those names.
-    """
-    if not os.path.isfile('whitelist.txt'):
-        raise Exception('File whitelist.txt not found in local directory.')
-    f = open('whitelist.txt', 'r')
-    tables = []
-    for line in f.readlines():
-        if len(line) > 0:
-            line = line.strip()
-            tables.append(line)
-
-    return tables

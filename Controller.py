@@ -2,7 +2,8 @@ import os
 import sqlite3
 import boto3
 import pandas as pd
-from Ingestor import ingestor
+import Ingestor
+import AvroIngestor
 from pyarrow.parquet import ParquetDataset
 import argparse
 import time
@@ -35,14 +36,14 @@ def controller(directory, s3_path, database, last_sync_date):
             print(f"{date_folder} Marked for ingestion.")
             # Call Ingestor
             start = time.time()
-            parquet_status, athena_table_status = ingestor(folder_path, s3_path, database, "append")
+
+            # Ingest the aggregate data.
+            Ingestor.ingestor(folder_path, s3_path, database, "append")
+            # Ingest the raw data from the AVRO files.
+            AvroIngestor.ingestor(folder_path, s3_path, database, "append")
+
             end = time.time()
-            print(date_folder, end-start, parquet_status, athena_table_status)
-            # Check if ingestion is successful, add the date to ingested_dates
-            if (parquet_status == 'Successfully written parquet files') and athena_table_status == ('Succesfully created/updated Athena table'):
-                # Store date into a set
-                ingested_dates.add(date_folder)
-                # Check if it is a folder
+            print(date_folder, end-start)
 
 if __name__ == "__main__":
 
