@@ -182,8 +182,6 @@ def parse_avro(filepath : str, table_whitelist : list, device_id : str):
                     masterFrame = pd.concat([masterFrame, frame], axis=0, ignore_index=True)
                     master[table_name] = masterFrame
 
-                    print(masterFrame)
-
     return master
 
 def gen_full_participant_id(record : dict):
