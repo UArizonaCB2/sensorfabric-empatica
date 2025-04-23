@@ -46,7 +46,6 @@ def controller(directory, s3_path, database, last_sync_date):
             print(date_folder, end-start)
 
 if __name__ == "__main__":
-
     cmdparser = argparse.ArgumentParser(description='Controller to ingest empatica files.')
     cmdparser.add_argument('-d', '--directory', type=str, help='Path to the participant_data/ directory', required=True)
     cmdparser.add_argument('-p', '--s3_path', type=str, help='Path to where the parquet files will be uploaded in S3', required=True)

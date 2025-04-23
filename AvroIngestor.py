@@ -31,17 +31,20 @@ def _raw_ibi(record : dict) -> pd.DataFrame:
     """
     values = record['rawData']['systolicPeaks']['peaksTimeNanos']
     array = np.array(values)
+    timezone = record['timezone']
     # Timestamp in seconds.
     timestamps = array[1:]
     # Convert the absolute timestamps of peaks into relative IBI values.
     dates = [datetime.fromtimestamp(t / (10**9)) for t in timestamps]
+    local_dates = [datetime.fromtimestamp((t / (10**9))+timezone) for t in timestamps]
     array = array[1:] - array[:array.size-1]
     # IBI values are usually represented in ms.
     array = array / (10**6)
     bpm = (60 * 1000) / array
     # Create a quick pandas framework using this.
     frame = pd.DataFrame({'timestamp_ns':timestamps,
-                        'datetime':dates,
+                        'datetime_utc':dates,
+                        'datetime':local_dates,
                         'ibi_ms':array,
                         'hr':bpm})
 
@@ -100,27 +103,38 @@ def ingestor(directory, s3_path, database, mode='append'):
 
             # There are going to be multiple small files in here and we need to parse each of them.
             success_count = 0
+            # We will reduce the network requests by combining all the frames in a directory and pushing them up
+            # all at once.
+            master_buffer = dict()
             for filename in os.listdir(file_path):
                 if not avro_pattern.search(filename):
                     continue
 
                 master = parse_avro(os.path.join(file_path, filename), table_whitelist, device_id)
+                # Concat it with the master buffer that we have.
+                for tbl_name in master:
+                    if not tbl_name in master_buffer:
+                        master_buffer[tbl_name] = pd.DataFrame()
+                    temp_frame = master_buffer[tbl_name]
+                    temp_frame = pd.concat([temp_frame, master[tbl_name]])
+                    master_buffer[tbl_name] = temp_frame
 
-                for tbl_name in master.keys():
-                    # Upload it all to AWS
-                    status, err = uploadToAWS(master[tbl_name],
-                                s3_path,
-                                database,
-                                tbl_name,
-                                'participant_full_id')
+            # Upload the complete master frame to AWS.
+            for tbl_name in master.keys():
+                # Upload it all to AWS
+                status, err = uploadToAWS(master[tbl_name],
+                            s3_path,
+                            database,
+                            tbl_name,
+                            'participant_full_id')
 
-                    if status:
-                        print('Success : Written file {} into table {}'
-                              .format(os.path.join(file_path, filename), tbl_name))
-                    else:
-                        print('ERROR : Written file {} into table {}'
-                              .format(os.path.join(file_path, filename), tbl_name))
-                        print(err)
+                if status:
+                    print('Success : Written file {} into table {}'
+                            .format(os.path.join(file_path, filename), tbl_name))
+                else:
+                    print('ERROR : Written file {} into table {}'
+                            .format(os.path.join(file_path, filename), tbl_name))
+                    print(err)
 
 def parse_avro(filepath : str, table_whitelist : list, device_id : str):
     """
@@ -146,6 +160,10 @@ def parse_avro(filepath : str, table_whitelist : list, device_id : str):
 
                     assert(table_name in master)
 
+                    # We need to extact the timezone offset from the record.
+                    timezone = None
+                    if 'timezone' in record:
+                        timezone = record['timezone']
                     masterFrame = master[table_name]
                     # Use a function pointer to call respective function for this table.
                     frame = TABLE_NAMES[tbl_key]['func'](record)
@@ -153,6 +171,8 @@ def parse_avro(filepath : str, table_whitelist : list, device_id : str):
                     frame['participant_full_id'] = participant_full_id
                     # Append the device id to each record as well.
                     frame['device_id'] = device_id
+                    # Append the timezone to the frame so we can have that for every entry.
+                    frame['timezone'] = timezone
                     masterFrame = pd.concat([masterFrame, frame], axis=0, ignore_index=True)
                     master[table_name] = masterFrame
 
