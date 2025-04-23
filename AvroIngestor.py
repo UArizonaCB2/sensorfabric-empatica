@@ -162,8 +162,12 @@ def parse_avro(filepath : str, table_whitelist : list, device_id : str):
 
                     # We need to extact the timezone offset from the record.
                     timezone = None
+                    algoVersion = None
                     if 'timezone' in record:
                         timezone = record['timezone']
+                    if 'algoVersion' in record:
+                        algoVersion = record['algoVersion']
+
                     masterFrame = master[table_name]
                     # Use a function pointer to call respective function for this table.
                     frame = TABLE_NAMES[tbl_key]['func'](record)
@@ -173,8 +177,12 @@ def parse_avro(filepath : str, table_whitelist : list, device_id : str):
                     frame['device_id'] = device_id
                     # Append the timezone to the frame so we can have that for every entry.
                     frame['timezone'] = timezone
+                    # Just storing the JSON string for algoVersion as is right now.
+                    frame['algoversion'] = f"{algoVersion}"
                     masterFrame = pd.concat([masterFrame, frame], axis=0, ignore_index=True)
                     master[table_name] = masterFrame
+
+                    print(masterFrame)
 
     return master
 
