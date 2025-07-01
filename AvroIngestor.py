@@ -19,6 +19,33 @@ import boto3
 import awswrangler as wr
 from utils import createTableWhitelist, uploadToAWS
 
+def _raw_sys_peaks(record : dict) -> pd.DataFrame:
+    """
+    Method which extracts the times for the raw systolic peaks in nano seconds.
+
+    Parameters:
+    record(dict) : An AVRO record that contains data to be parsed.
+
+    Returns:
+    frame : Pandas dataframe containing the systolic peaks.
+    """
+
+    values = record['rawData']['systolicPeaks']['peaksTimeNanos']
+    timestamps = np.array(values)
+    timezone = record['timezone']
+    timestamp_utc = [datetime.fromtimestamp(timestamp / (10**9)) for timestamp in timestamps]
+    timestamp_local = [datetime.fromtimestamp((timestamp / (10**9)) + timezone) for timestamp in timestamps]
+
+    frame = pd.DataFrame({
+        'peak_timestamp_ns': timestamps,
+        'peak_timestamp_utc': timestamp_utc,
+        'peak_timestamp_local': timestamp_local
+    })
+
+    frame['timezone'] = timezone
+
+    return frame
+
 def _raw_ibi(record : dict) -> pd.DataFrame:
     """
     Method which will process raw IBI values from the record.
@@ -63,7 +90,7 @@ Dictionary Format :
 TABLE_NAMES = dict(
     ibi = dict(
         name = 'raw_ibi',
-        func = _raw_ibi
+        func = _raw_ibi,
     )
 )
 
@@ -120,9 +147,9 @@ def ingestor(directory, s3_path, database, mode='append'):
                     master_buffer[tbl_name] = temp_frame
 
             # Upload the complete master frame to AWS.
-            for tbl_name in master.keys():
+            for tbl_name in master_buffer.keys():
                 # Upload it all to AWS
-                status, err = uploadToAWS(master[tbl_name],
+                status, err = uploadToAWS(master_buffer[tbl_name],
                             s3_path,
                             database,
                             tbl_name,
